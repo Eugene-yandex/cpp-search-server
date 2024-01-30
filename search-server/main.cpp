@@ -136,13 +136,17 @@ private:
         }
         return query;
     }
+    
+double CountIDF (const string& text) const {
+   return log(document_count_ *1.0 / word_to_document_freqs_.at(text).size());
+}
 
     vector<Document> FindAllDocuments(const Query& query) const {
         map<int,double> relevance; // словарь id, релеватность
         double idf = 0.0;
         for (const string& plus : query.plus_words) { 
            if (word_to_document_freqs_.count(plus) > 0) { 
-           idf = log(document_count_ *1.0/ word_to_document_freqs_.at(plus).size()); 
+           idf = CountIDF(plus); 
                for (const auto& [id, tf] : word_to_document_freqs_.at(plus)) { 
                  relevance[id] += tf * idf;
                 }
