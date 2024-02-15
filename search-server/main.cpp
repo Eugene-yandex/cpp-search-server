@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iostream>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <set>
 #include <string>
@@ -82,8 +83,6 @@ enum class DocumentStatus {
 class SearchServer {
 public:
 
-    inline static constexpr int INVALID_DOCUMENT_ID = -1;
-
     template <typename StringContainer>
     explicit SearchServer(const StringContainer& stop_words)
         : stop_words_(MakeUniqueNonEmptyStrings(stop_words)) {
@@ -100,18 +99,19 @@ public:
     {
     }
 
-   void AddDocument(int document_id, const string& document, DocumentStatus status,
+    void AddDocument(int document_id, const string& document, DocumentStatus status,
         const vector<int>& ratings) {
         const vector<string> words = SplitIntoWordsNoStop(document);
-        for (const string& word : words) {
-            if (!IsValidWord(word)) {
-                throw invalid_argument("invalid characters");
-            }
+
+        if (document_id < 0) {
+            throw invalid_argument("id document cannot be negative");
         }
 
-        if (document_id < 0 || documents_.count(document_id)) {
-            throw invalid_argument("incorrect id document's");
+        if (documents_.count(document_id)) {
+            throw invalid_argument("id document was previously in the documents");
         }
+
+
         const double inv_word_count = 1.0 / words.size();
         for (const string& word : words) {
             word_to_document_freqs_[word][document_id] += inv_word_count;
@@ -122,9 +122,7 @@ public:
 
     template <typename DocumentPredicate>
     vector<Document> FindTopDocuments(const string& raw_query, DocumentPredicate document_predicate) const {
-        if (!IsValidWord(raw_query)) {
-            throw invalid_argument("invalid argument");
-        }
+
         const Query query = ParseQuery(raw_query);
         auto matched_documents = FindAllDocuments(query, document_predicate);
 
@@ -160,7 +158,7 @@ public:
 
     tuple<vector<string>, DocumentStatus> MatchDocument(const string& raw_query, int document_id) const {
         if (!IsValidWord(raw_query)) {
-            throw invalid_argument("invalid argument");;
+            throw invalid_argument("invalid argument");
         }
         const Query query = ParseQuery(raw_query);
         vector<string> matched_words;
@@ -186,15 +184,8 @@ public:
 
 
     int GetDocumentId(int index) const {
-        if (index >= 0 && index < static_cast<int>(id_documents_.size())) {
-            return id_documents_[index];
-        }
-        else {
-            throw out_of_range("invalid index");
-        }
+        return id_documents_.at(index);
     }
-
-
 
 private:
     struct DocumentData {
@@ -214,6 +205,9 @@ private:
         vector<string> words;
         for (const string& word : SplitIntoWords(text)) {
             if (!IsStopWord(word)) {
+                if (!IsValidWord(word)) {
+                    throw invalid_argument("invalid characters");
+                }
                 words.push_back(word);
             }
         }
@@ -224,10 +218,7 @@ private:
         if (ratings.empty()) {
             return 0;
         }
-        int rating_sum = 0;
-        for (const int rating : ratings) {
-            rating_sum += rating;
-        }
+        int rating_sum = accumulate(ratings.begin(), ratings.end(), 0);
         return rating_sum / static_cast<int>(ratings.size());
     }
 
@@ -238,6 +229,14 @@ private:
     };
 
     QueryWord ParseQueryWord(string text) const {
+        if (HaveExtraMinus(text)) {
+            throw invalid_argument("incorrectly used \" - \" in the word");
+        }
+
+        if (!IsValidWord(text)) {
+            throw invalid_argument("invalid characters");
+        }
+
         bool is_minus = false;
         // Word shouldn't be empty
         if (text[0] == '-') {
@@ -308,15 +307,12 @@ private:
     }
 
     static bool IsValidWord(const string& word) {
-        // A valid word must not contain special characters
-        if (word[1] == '-' || word[word.size() - 1] == '-' || (word.size() == 1 && word[0] == '-')) {
-            return false;
-        }
-        for (const char& c : word) {
-            if (c >= '\0' && c < ' ') {
-                return false;
-            }
-        }
-        return true;
+        return none_of(word.begin(), word.end(), [](char c) {
+            return c >= '\0' && c < ' ';
+            });
+    }
+
+    static bool HaveExtraMinus(const string& word) {
+        return (word[1] == '-' || word[word.size() - 1] == '-');
     }
 };
